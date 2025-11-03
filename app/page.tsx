@@ -4,530 +4,731 @@ import { useEffect, useState } from 'react'
 import { supabase, FuelRecord, TollRecord } from '@/lib/supabase'
 
 export default function Home() {
+  const [activeTab, setActiveTab] = useState<'fuel' | 'toll'>('fuel')
+  const [currentMonth, setCurrentMonth] = useState('')
   const [fuelRecords, setFuelRecords] = useState<FuelRecord[]>([])
   const [tollRecords, setTollRecords] = useState<TollRecord[]>([])
-  const [monthlyBudget, setMonthlyBudget] = useState(200000)
-  const [memo, setMemo] = useState('- 시동 off\n- 총 주행거리 기록 및 리셋 / 말일 작성\n- 차량 시스템 연비 기록')
-  const [currentYear, setCurrentYear] = useState(new Date().getFullYear())
-  const [currentMonth, setCurrentMonth] = useState(new Date().getMonth())
-  const [loading, setLoading] = useState(true)
-  const [isMemoEditing, setIsMemoEditing] = useState(false)
-  const [isBudgetEditing, setIsBudgetEditing] = useState(false)
-  const [tempMemo, setTempMemo] = useState('')
-  const [tempBudget, setTempBudget] = useState(200000)
-  const [editingFuelId, setEditingFuelId] = useState<string | null>(null)
-  const [editingTollId, setEditingTollId] = useState<string | null>(null)
+  const [monthlyBudget, setMonthlyBudget] = useState(0)
+  const [memo, setMemo] = useState('')
+  const [editingBudget, setEditingBudget] = useState(false)
+  const [editingMemo, setEditingMemo] = useState(false)
+  
+  // 수정 중인 레코드 ID 추적
+  const [editingRecordId, setEditingRecordId] = useState<string | null>(null)
+  
+  // 메뉴 열림 상태 추적
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null)
 
-  const [formData, setFormData] = useState({
-    date: new Date().toISOString().split('T')[0],
-    time: '',
+  // 주유 기록 폼 데이터
+  const [fuelForm, setFuelForm] = useState({
+    date: '',
     region: '',
     station: '',
-    pricePerLiter: '',
-    fuelAmount: '',
-    distance: ''
+    price_per_liter: '',
+    fuel_amount: '',
+    distance: '',
   })
 
+  // 톨게이트 폼 데이터
   const [tollForm, setTollForm] = useState({
-    date: new Date().toISOString().split('T')[0],
+    date: '',
     section: '',
-    amount: ''
+    amount: '',
   })
 
   useEffect(() => {
-    loadData()
-  }, [currentYear, currentMonth])
+    const now = new Date()
+    const yearMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+    setCurrentMonth(yearMonth)
+    fetchRecords(yearMonth)
+    fetchSettings(yearMonth)
+  }, [])
 
-  const loadData = async () => {
-    setLoading(true)
-    try {
-      const startDate = new Date(currentYear, currentMonth, 1).toISOString().split('T')[0]
-      const endDate = new Date(currentYear, currentMonth + 1, 0).toISOString().split('T')[0]
-      
-      const { data: fuelData } = await supabase
-        .from('fuel_records')
-        .select('*')
-        .gte('date', startDate)
-        .lte('date', endDate)
-        .order('date', { ascending: false })
-        .order('time', { ascending: false })
+  const fetchRecords = async (yearMonth: string) => {
+    const [year, month] = yearMonth.split('-')
+    const startDate = `${year}-${month}-01`
+    const endDate = `${year}-${month}-31`
 
-      const { data: tollData } = await supabase
-        .from('toll_records')
-        .select('*')
-        .gte('date', startDate)
-        .lte('date', endDate)
-        .order('date', { ascending: false })
+    const { data: fuelData } = await supabase
+      .from('fuel_records')
+      .select('*')
+      .gte('date', startDate)
+      .lte('date', endDate)
+      .order('date', { ascending: false })
 
-      const yearMonth = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}`
-      const { data: budgetData } = await supabase
-        .from('settings')
-        .select('*')
-        .eq('key', 'budget')
-        .eq('year_month', yearMonth)
-        .single()
+    const { data: tollData } = await supabase
+      .from('toll_records')
+      .select('*')
+      .gte('date', startDate)
+      .lte('date', endDate)
+      .order('date', { ascending: false })
 
-      const { data: memoData } = await supabase
-        .from('settings')
-        .select('*')
-        .eq('key', 'memo')
-        .eq('year_month', '')
-        .single()
-
-      setFuelRecords(fuelData || [])
-      setTollRecords(tollData || [])
-      setMonthlyBudget(budgetData?.value ? parseInt(budgetData.value) : 200000)
-      setMemo(memoData?.value || memo)
-    } catch (error) {
-      console.error('Error loading data:', error)
-    }
-    setLoading(false)
+    if (fuelData) setFuelRecords(fuelData)
+    if (tollData) setTollRecords(tollData)
   }
 
-  const handleAddFuel = async (e: React.FormEvent) => {
+  const fetchSettings = async (yearMonth: string) => {
+    const { data: budgetData } = await supabase
+      .from('settings')
+      .select('value')
+      .eq('key', 'monthly_budget')
+      .eq('year_month', yearMonth)
+      .single()
+
+    const { data: memoData } = await supabase
+      .from('settings')
+      .select('value')
+      .eq('key', 'memo')
+      .eq('year_month', '')
+      .single()
+
+    if (budgetData) setMonthlyBudget(Number(budgetData.value))
+    if (memoData) setMemo(memoData.value)
+  }
+
+  const handleMonthChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newMonth = e.target.value
+    setCurrentMonth(newMonth)
+    fetchRecords(newMonth)
+    fetchSettings(newMonth)
+  }
+
+  const handleFuelSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
-    const totalCost = Math.round(parseFloat(formData.pricePerLiter) * parseFloat(formData.fuelAmount))
-    
-    const { data, error } = await supabase
-      .from('fuel_records')
-      .insert([{
-        date: formData.date,
-        time: formData.time || new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false }),
-        region: formData.region,
-        station: formData.station,
-        price_per_liter: parseInt(formData.pricePerLiter),
-        fuel_amount: parseFloat(formData.fuelAmount),
-        distance: parseInt(formData.distance),
-        total_cost: totalCost
-      }])
-      .select()
+    // 시간 자동 저장
+    const now = new Date()
+    const currentTime = now.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false })
 
-    if (!error && data) {
-      setFuelRecords([data[0], ...fuelRecords])
-      showToast('주유 기록이 추가되었습니다!')
-      setFormData({
-        ...formData,
+    const total_cost = Number(fuelForm.price_per_liter) * Number(fuelForm.fuel_amount)
+
+    const { error } = await supabase.from('fuel_records').insert([
+      {
+        date: fuelForm.date,
+        time: currentTime, // 자동 저장된 시간
+        region: fuelForm.region,
+        station: fuelForm.station,
+        price_per_liter: Number(fuelForm.price_per_liter),
+        fuel_amount: Number(fuelForm.fuel_amount),
+        distance: Number(fuelForm.distance),
+        total_cost,
+      },
+    ])
+
+    if (!error) {
+      setFuelForm({
+        date: '',
         region: '',
         station: '',
-        pricePerLiter: '',
-        fuelAmount: '',
+        price_per_liter: '',
+        fuel_amount: '',
         distance: '',
-        time: ''
       })
-    } else {
-      showToast('저장에 실패했습니다', 'error')
+      fetchRecords(currentMonth)
     }
+  }
+
+  const handleTollSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+
+    const { error } = await supabase.from('toll_records').insert([
+      {
+        date: tollForm.date,
+        section: tollForm.section,
+        amount: Number(tollForm.amount),
+      },
+    ])
+
+    if (!error) {
+      setTollForm({
+        date: '',
+        section: '',
+        amount: '',
+      })
+      fetchRecords(currentMonth)
+    }
+  }
+
+  const handleBudgetSave = async () => {
+    await supabase.from('settings').upsert(
+      {
+        key: 'monthly_budget',
+        value: String(monthlyBudget),
+        year_month: currentMonth,
+      },
+      { onConflict: 'key,year_month' }
+    )
+    setEditingBudget(false)
+  }
+
+  const handleMemoSave = async () => {
+    await supabase.from('settings').upsert(
+      {
+        key: 'memo',
+        value: memo,
+        year_month: '',
+      },
+      { onConflict: 'key,year_month' }
+    )
+    setEditingMemo(false)
   }
 
   const handleDeleteFuel = async (id: string) => {
-    if (!confirm('정말 삭제하시겠습니까?')) return
-    
-    const { error } = await supabase
-      .from('fuel_records')
-      .delete()
-      .eq('id', id)
-
-    if (!error) {
-      setFuelRecords(fuelRecords.filter(r => r.id !== id))
-      showToast('삭제되었습니다!')
-    } else {
-      showToast('삭제에 실패했습니다', 'error')
+    if (confirm('정말 삭제하시겠습니까?')) {
+      await supabase.from('fuel_records').delete().eq('id', id)
+      fetchRecords(currentMonth)
     }
-  }
-
-  const handleAddToll = async (e: React.FormEvent) => {
-    e.preventDefault()
-    
-    const { data, error } = await supabase
-      .from('toll_records')
-      .insert([{
-        date: tollForm.date,
-        section: tollForm.section || '톨게이트',
-        amount: parseInt(tollForm.amount)
-      }])
-      .select()
-
-    if (!error && data) {
-      setTollRecords([data[0], ...tollRecords])
-      showToast('톨게이트 기록이 추가되었습니다!')
-      setTollForm({
-        ...tollForm,
-        section: '',
-        amount: ''
-      })
-    } else {
-      showToast('저장에 실패했습니다', 'error')
-    }
+    setOpenMenuId(null)
   }
 
   const handleDeleteToll = async (id: string) => {
-    if (!confirm('정말 삭제하시겠습니까?')) return
-    
+    if (confirm('정말 삭제하시겠습니까?')) {
+      await supabase.from('toll_records').delete().eq('id', id)
+      fetchRecords(currentMonth)
+    }
+    setOpenMenuId(null)
+  }
+
+  // 주유 기록 수정 시작
+  const startEditFuel = (record: FuelRecord) => {
+    setEditingRecordId(record.id)
+    setOpenMenuId(null)
+  }
+
+  // 톨게이트 기록 수정 시작
+  const startEditToll = (record: TollRecord) => {
+    setEditingRecordId(record.id)
+    setOpenMenuId(null)
+  }
+
+  // 주유 기록 수정 저장
+  const handleUpdateFuel = async (record: FuelRecord) => {
+    const total_cost = record.price_per_liter * record.fuel_amount
+
+    const { error } = await supabase
+      .from('fuel_records')
+      .update({
+        date: record.date,
+        time: record.time,
+        region: record.region,
+        station: record.station,
+        price_per_liter: record.price_per_liter,
+        fuel_amount: record.fuel_amount,
+        distance: record.distance,
+        total_cost,
+      })
+      .eq('id', record.id)
+
+    if (!error) {
+      setEditingRecordId(null)
+      fetchRecords(currentMonth)
+    }
+  }
+
+  // 톨게이트 기록 수정 저장
+  const handleUpdateToll = async (record: TollRecord) => {
     const { error } = await supabase
       .from('toll_records')
-      .delete()
-      .eq('id', id)
-
-    if (!error) {
-      setTollRecords(tollRecords.filter(r => r.id !== id))
-      showToast('삭제되었습니다!')
-    } else {
-      showToast('삭제에 실패했습니다', 'error')
-    }
-  }
-
-  const handleSaveBudget = async () => {
-    const yearMonth = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}`
-    
-    const { error } = await supabase
-      .from('settings')
-      .upsert({
-        key: 'budget',
-        value: tempBudget.toString(),
-        year_month: yearMonth
-      }, {
-        onConflict: 'key,year_month'
+      .update({
+        date: record.date,
+        section: record.section,
+        amount: record.amount,
       })
+      .eq('id', record.id)
 
     if (!error) {
-      setMonthlyBudget(tempBudget)
-      setIsBudgetEditing(false)
-      showToast('예산이 저장되었습니다!')
+      setEditingRecordId(null)
+      fetchRecords(currentMonth)
     }
   }
 
-  const handleSaveMemo = async () => {
-    const { error } = await supabase
-      .from('settings')
-      .upsert({
-        key: 'memo',
-        value: tempMemo,
-        year_month: ''
-      }, {
-        onConflict: 'key,year_month'
-      })
-
-    if (!error) {
-      setMemo(tempMemo)
-      setIsMemoEditing(false)
-      showToast('메모가 저장되었습니다!')
-    }
+  // 수정 취소
+  const cancelEdit = () => {
+    setEditingRecordId(null)
+    fetchRecords(currentMonth) // 원래 데이터로 복원
   }
 
-  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
-    const toast = document.createElement('div')
-    toast.className = `fixed bottom-8 right-8 bg-white px-6 py-4 rounded-xl shadow-lg flex items-center gap-3 z-50 animate-slide-in ${type === 'error' ? 'border-l-4 border-red-500' : 'border-l-4 border-green-500'}`
-    toast.innerHTML = `
-      <span class="text-2xl">${type === 'success' ? '✓' : '✕'}</span>
-      <span class="font-semibold text-gray-800">${message}</span>
-    `
-    document.body.appendChild(toast)
-    setTimeout(() => toast.remove(), 3000)
-  }
-
-  const calculateStats = () => {
-    const monthlyFuelCost = fuelRecords.reduce((sum, r) => sum + r.total_cost, 0)
-    const monthlyTollCost = tollRecords.reduce((sum, r) => sum + r.amount, 0)
-    const totalFuel = fuelRecords.reduce((sum, r) => sum + r.fuel_amount, 0)
-    const totalDistance = fuelRecords.reduce((sum, r) => sum + r.distance, 0)
-
-    const sortedRecords = [...fuelRecords].sort((a, b) => {
-      const dateCompare = new Date(a.date).getTime() - new Date(b.date).getTime()
-      if (dateCompare !== 0) return dateCompare
-      return (a.time || '').localeCompare(b.time || '')
-    })
-
-    let totalEfficiency = 0
-    let count = 0
-    for (let i = 1; i < sortedRecords.length; i++) {
-      const distance = sortedRecords[i].distance
-      const prevFuel = sortedRecords[i - 1].fuel_amount
-      if (distance > 0 && prevFuel > 0) {
-        totalEfficiency += distance / prevFuel
-        count++
-      }
-    }
-
-    const avgEfficiency = count > 0 ? (totalEfficiency / count).toFixed(2) : '0'
-    const remaining = monthlyBudget - monthlyFuelCost - monthlyTollCost
-    const usedPercent = Math.min((monthlyFuelCost + monthlyTollCost) / monthlyBudget * 100, 100)
-
-    return {
-      monthlyFuelCost,
-      monthlyTollCost,
-      totalFuel,
-      totalDistance,
-      avgEfficiency,
-      remaining,
-      usedPercent
-    }
-  }
-
-  const stats = calculateStats()
-
-  const changeMonth = (direction: number) => {
-    if (direction === 0) {
-      setCurrentYear(new Date().getFullYear())
-      setCurrentMonth(new Date().getMonth())
-    } else {
-      let newMonth = currentMonth + direction
-      let newYear = currentYear
-      if (newMonth > 11) {
-        newMonth = 0
-        newYear++
-      } else if (newMonth < 0) {
-        newMonth = 11
-        newYear--
-      }
-      setCurrentYear(newYear)
-      setCurrentMonth(newMonth)
-    }
-  }
-
-  const monthNames = ['1월', '2월', '3월', '4월', '5월', '6월', '7월', '8월', '9월', '10월', '11월', '12월']
-
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-gray-500">데이터를 불러오는 중...</p>
-        </div>
-      </div>
-    )
-  }
+  const totalFuelCost = fuelRecords.reduce((sum, r) => sum + r.total_cost, 0)
+  const totalTollCost = tollRecords.reduce((sum, r) => sum + r.amount, 0)
+  const totalDistance = fuelRecords.reduce((sum, r) => sum + r.distance, 0)
+  const totalFuelAmount = fuelRecords.reduce((sum, r) => sum + r.fuel_amount, 0)
+  const avgEfficiency = totalDistance > 0 && totalFuelAmount > 0 ? (totalDistance / totalFuelAmount).toFixed(2) : '0.00'
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="bg-gradient-to-r from-primary to-primary-dark text-white px-6 py-12 mb-[-60px]">
-        <div className="max-w-7xl mx-auto">
-          <h1 className="text-4xl font-bold mb-2">⛽️ 주유 관리</h1>
-          <p className="text-white/90">똑똑한 주유 기록</p>
-        </div>
-      </div>
+      {/* 헤더 */}
+      <header className="bg-gradient-to-r from-blue-500 to-blue-600 text-white p-4 shadow-lg">
+        <h1 className="text-2xl font-bold text-center">⛽ 주유 관리</h1>
+      </header>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="bg-white rounded-2xl shadow-lg p-4 mb-6 flex justify-between items-center">
-          <div className="flex items-baseline gap-2">
-            <span className="text-xl font-semibold text-primary">{currentYear}</span>
-            <span className="text-3xl font-bold text-gray-900">{monthNames[currentMonth]}</span>
-          </div>
-          <div className="flex gap-2">
-            <button onClick={() => changeMonth(-1)} className="px-4 py-2 bg-gray-100 rounded-lg font-semibold hover:bg-gray-200 transition">◀</button>
-            <button onClick={() => changeMonth(0)} className="px-4 py-2 bg-gray-100 rounded-lg font-semibold hover:bg-gray-200 transition">오늘</button>
-            <button onClick={() => changeMonth(1)} className="px-4 py-2 bg-gray-100 rounded-lg font-semibold hover:bg-gray-200 transition">▶</button>
-          </div>
+      <div className="max-w-4xl mx-auto p-4 space-y-6">
+        {/* 월 선택 */}
+        <div className="bg-white rounded-lg shadow p-4">
+          <label className="block text-sm font-medium text-gray-700 mb-2">조회 월</label>
+          <input
+            type="month"
+            value={currentMonth}
+            onChange={handleMonthChange}
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          />
         </div>
 
-        <div className="bg-white rounded-2xl shadow-md p-6 mb-6">
-          <div className="flex justify-between items-center mb-3">
-            <h3 className="text-sm font-bold text-gray-900">⚠️ 주유 시 중요 사항</h3>
-            <button onClick={() => { setIsMemoEditing(!isMemoEditing); setTempMemo(memo) }} className="p-2 hover:bg-gray-100 rounded-lg transition">
-              <div className="flex flex-col gap-0.5">
-                <div className="w-1 h-1 bg-gray-600 rounded-full"></div>
-                <div className="w-1 h-1 bg-gray-600 rounded-full"></div>
-                <div className="w-1 h-1 bg-gray-600 rounded-full"></div>
+        {/* 통계 카드 */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="bg-white rounded-lg shadow p-4">
+            <div className="text-sm text-gray-600">주유비</div>
+            <div className="text-xl font-bold text-blue-600">{totalFuelCost.toLocaleString()}원</div>
+          </div>
+          <div className="bg-white rounded-lg shadow p-4">
+            <div className="text-sm text-gray-600">톨비</div>
+            <div className="text-xl font-bold text-green-600">{totalTollCost.toLocaleString()}원</div>
+          </div>
+          <div className="bg-white rounded-lg shadow p-4">
+            <div className="text-sm text-gray-600">평균 연비</div>
+            <div className="text-xl font-bold text-purple-600">{avgEfficiency} km/L</div>
+          </div>
+          <div className="bg-white rounded-lg shadow p-4">
+            <div className="text-sm text-gray-600">주행거리</div>
+            <div className="text-xl font-bold text-orange-600">{totalDistance.toLocaleString()} km</div>
+          </div>
+        </div>
+
+        {/* 월 예산 */}
+        <div className="bg-white rounded-lg shadow p-4">
+          <div className="flex justify-between items-center">
+            <span className="font-medium text-gray-700">이번 달 예산</span>
+            {editingBudget ? (
+              <div className="flex gap-2">
+                <input
+                  type="number"
+                  value={monthlyBudget}
+                  onChange={(e) => setMonthlyBudget(Number(e.target.value))}
+                  className="w-32 px-2 py-1 border border-gray-300 rounded"
+                />
+                <button onClick={handleBudgetSave} className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600">
+                  저장
+                </button>
               </div>
-            </button>
+            ) : (
+              <div className="flex gap-2 items-center">
+                <span className="text-lg font-bold">{monthlyBudget.toLocaleString()}원</span>
+                <button onClick={() => setEditingBudget(true)} className="text-blue-500 text-sm">
+                  수정
+                </button>
+              </div>
+            )}
           </div>
-          {!isMemoEditing ? (
-            <p className="text-gray-700 text-sm whitespace-pre-line">{memo}</p>
-          ) : (
-            <div>
-              <textarea value={tempMemo} onChange={(e) => setTempMemo(e.target.value)} className="w-full p-3 border rounded-lg text-sm" rows={4} maxLength={1000} />
-              <div className="flex gap-2 mt-3">
-                <button onClick={handleSaveMemo} className="px-4 py-2 bg-primary text-white rounded-lg font-semibold hover:bg-primary-dark transition">저장</button>
-                <button onClick={() => setIsMemoEditing(false)} className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg font-semibold hover:bg-gray-300 transition">취소</button>
+          {monthlyBudget > 0 && (
+            <div className="mt-2">
+              <div className="flex justify-between text-sm text-gray-600 mb-1">
+                <span>사용액: {(totalFuelCost + totalTollCost).toLocaleString()}원</span>
+                <span>잔액: {(monthlyBudget - totalFuelCost - totalTollCost).toLocaleString()}원</span>
+              </div>
+              <div className="w-full bg-gray-200 rounded-full h-2">
+                <div
+                  className="bg-blue-500 h-2 rounded-full transition-all"
+                  style={{ width: `${Math.min(((totalFuelCost + totalTollCost) / monthlyBudget) * 100, 100)}%` }}
+                />
               </div>
             </div>
           )}
         </div>
 
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-          <div className="bg-white rounded-2xl shadow-md p-6 hover:shadow-lg transition">
-            <h3 className="text-xs text-gray-500 font-semibold mb-2">이번 달 주유비</h3>
-            <p className="text-3xl font-bold text-gray-900 mb-1">{stats.monthlyFuelCost.toLocaleString()}</p>
-            <p className="text-sm text-gray-400">원</p>
-          </div>
-          <div className="bg-white rounded-2xl shadow-md p-6 hover:shadow-lg transition">
-            <h3 className="text-xs text-gray-500 font-semibold mb-2">평균 연비</h3>
-            <p className="text-3xl font-bold text-gray-900 mb-1">{stats.avgEfficiency}</p>
-            <p className="text-sm text-gray-400">km/L</p>
-          </div>
-          <div className="bg-white rounded-2xl shadow-md p-6 hover:shadow-lg transition">
-            <h3 className="text-xs text-gray-500 font-semibold mb-2">주행거리</h3>
-            <p className="text-3xl font-bold text-gray-900 mb-1">{stats.totalDistance.toLocaleString()}</p>
-            <p className="text-sm text-gray-400">km</p>
-          </div>
-          <div className="bg-white rounded-2xl shadow-md p-6 hover:shadow-lg transition">
-            <h3 className="text-xs text-gray-500 font-semibold mb-2">주유량</h3>
-            <p className="text-3xl font-bold text-gray-900 mb-1">{stats.totalFuel.toFixed(1)}</p>
-            <p className="text-sm text-gray-400">L</p>
-          </div>
-        </div>
-
-        <div className="grid lg:grid-cols-[380px_1fr] gap-6 mb-6">
-          <div className="bg-white rounded-2xl shadow-md p-6">
-            <h2 className="text-xl font-bold text-gray-900 mb-6">주유 기록 추가</h2>
-
-            <div className="bg-gradient-to-r from-primary to-primary-dark text-white rounded-xl p-5 mb-6">
-              <div className="flex justify-between items-center mb-3">
-                <h3 className="text-sm font-semibold opacity-90">월 예산</h3>
-                <button onClick={() => { setIsBudgetEditing(!isBudgetEditing); setTempBudget(monthlyBudget) }} className="bg-white/20 hover:bg-white/30 rounded-lg px-2 py-1 transition">
-                  <div className="flex gap-0.5">
-                    <div className="w-0.5 h-0.5 bg-white rounded-full"></div>
-                    <div className="w-0.5 h-0.5 bg-white rounded-full"></div>
-                    <div className="w-0.5 h-0.5 bg-white rounded-full"></div>
-                  </div>
-                </button>
-              </div>
-              {!isBudgetEditing ? (
-                <>
-                  <p className="text-2xl font-bold mb-1">{monthlyBudget.toLocaleString()}원</p>
-                  <p className="text-sm opacity-95 mb-3">잔액 {stats.remaining.toLocaleString()}원</p>
-                  <div className="bg-white/25 rounded-full h-1.5 overflow-hidden">
-                    <div className={`h-full rounded-full transition-all ${stats.usedPercent > 100 ? 'bg-red-400' : stats.usedPercent > 80 ? 'bg-yellow-400' : 'bg-white'}`} style={{ width: `${Math.min(stats.usedPercent, 100)}%` }}></div>
-                  </div>
-                </>
-              ) : (
-                <div className="flex gap-2">
-                  <input type="number" value={tempBudget} onChange={(e) => setTempBudget(parseInt(e.target.value))} className="flex-1 px-3 py-2 rounded-lg text-gray-900 font-bold" min="0" />
-                  <button onClick={handleSaveBudget} className="px-3 py-2 bg-white/20 hover:bg-white/30 rounded-lg font-semibold transition">저장</button>
-                  <button onClick={() => setIsBudgetEditing(false)} className="px-3 py-2 bg-white/20 hover:bg-white/30 rounded-lg font-semibold transition">취소</button>
-                </div>
-              )}
-            </div>
-
-            <form onSubmit={handleAddFuel} className="space-y-4">
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">날짜</label>
-                <input type="date" value={formData.date} onChange={(e) => setFormData({ ...formData, date: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent" required />
-              </div>
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">시간 <span className="text-gray-400 font-normal">(선택)</span></label>
-                <input type="time" value={formData.time} onChange={(e) => setFormData({ ...formData, time: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent" />
-              </div>
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">지역</label>
-                <input type="text" value={formData.region} onChange={(e) => setFormData({ ...formData, region: e.target.value })} placeholder="예: 서울" className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent" maxLength={20} />
-              </div>
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">주유소 상호명</label>
-                <input type="text" value={formData.station} onChange={(e) => setFormData({ ...formData, station: e.target.value })} placeholder="예: SK 가스충전소" className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent" maxLength={50} />
-              </div>
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">단가 <span className="text-gray-400 font-normal">(원/L)</span></label>
-                <input type="number" value={formData.pricePerLiter} onChange={(e) => setFormData({ ...formData, pricePerLiter: e.target.value })} placeholder="예: 1600" className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent" required min="0" />
-              </div>
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">주유량 <span className="text-gray-400 font-normal">(L)</span></label>
-                <input type="number" step="0.1" value={formData.fuelAmount} onChange={(e) => setFormData({ ...formData, fuelAmount: e.target.value })} placeholder="예: 40.5" className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent" required min="0" />
-              </div>
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">주행거리 <span className="text-gray-400 font-normal">(이전 주유 후, km)</span></label>
-                <input type="number" value={formData.distance} onChange={(e) => setFormData({ ...formData, distance: e.target.value })} placeholder="예: 350" className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent" required min="0" />
-              </div>
-              <button type="submit" className="w-full bg-primary hover:bg-primary-dark text-white font-bold py-4 px-6 rounded-xl transition transform hover:scale-[1.02] active:scale-100">
-                기록 추가
+        {/* 메모 */}
+        <div className="bg-white rounded-lg shadow p-4">
+          <div className="flex justify-between items-start mb-2">
+            <span className="font-medium text-gray-700">메모</span>
+            {!editingMemo && (
+              <button onClick={() => setEditingMemo(true)} className="text-blue-500 text-sm">
+                수정
               </button>
-            </form>
-          </div>
-
-          <div className="bg-white rounded-2xl shadow-md p-6">
-            <h2 className="text-xl font-bold text-gray-900 mb-6">주유 기록</h2>
-            <div className="space-y-3 max-h-[600px] overflow-y-auto">
-              {fuelRecords.length === 0 ? (
-                <p className="text-center text-gray-400 py-12">이번 달 기록이 없습니다</p>
-              ) : (
-                fuelRecords.map((record) => (
-                  <div key={record.id} className="bg-gray-50 rounded-xl p-5 hover:bg-gray-100 transition relative group">
-                    <button 
-                      onClick={() => handleDeleteFuel(record.id)}
-                      className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded-lg text-sm font-semibold"
-                    >
-                      삭제
-                    </button>
-                    <div className="flex justify-between items-start mb-2">
-                      <div>
-                        <p className="font-bold text-gray-900">{record.date} {record.region && `(${record.region})`}</p>
-                        <p className="text-xs text-gray-400 mt-0.5">{record.time}</p>
-                      </div>
-                    </div>
-                    <p className="text-sm text-gray-600 mb-3">
-                      {record.station || '주유소'}<br />
-                      주유량: {record.fuel_amount}L | 단가: {record.price_per_liter.toLocaleString()}원/L | 주행: {record.distance}km
-                    </p>
-                    <p className="text-2xl font-bold text-primary">{record.total_cost.toLocaleString()}원</p>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-2xl shadow-md p-6 mb-8">
-          <h2 className="text-xl font-bold text-gray-900 mb-6">톨게이트 요금</h2>
-          <form onSubmit={handleAddToll} className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">날짜</label>
-              <input type="date" value={tollForm.date} onChange={(e) => setTollForm({ ...tollForm, date: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent" required />
-            </div>
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">구간</label>
-              <input type="text" value={tollForm.section} onChange={(e) => setTollForm({ ...tollForm, section: e.target.value })} placeholder="예: 서울-부산" className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent" maxLength={50} />
-            </div>
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">요금 <span className="text-gray-400 font-normal">(원)</span></label>
-              <input type="number" value={tollForm.amount} onChange={(e) => setTollForm({ ...tollForm, amount: e.target.value })} placeholder="예: 35000" className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent" required min="0" />
-            </div>
-            <button type="submit" className="bg-primary hover:bg-primary-dark text-white font-bold py-3 px-6 rounded-xl transition self-end">
-              추가
-            </button>
-          </form>
-
-          <div className="space-y-3 mb-6">
-            {tollRecords.length === 0 ? (
-              <p className="text-center text-gray-400 py-8">이번 달 톨게이트 기록이 없습니다</p>
-            ) : (
-              tollRecords.map((record) => (
-                <div key={record.id} className="bg-gray-50 rounded-xl p-4 hover:bg-gray-100 transition relative group">
-                  <button 
-                    onClick={() => handleDeleteToll(record.id)}
-                    className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded-lg text-sm font-semibold"
-                  >
-                    삭제
-                  </button>
-                  <p className="font-bold text-gray-900 mb-1">{record.date}</p>
-                  <p className="text-sm text-gray-600 mb-2">{record.section}</p>
-                  <p className="text-xl font-bold text-primary">{record.amount.toLocaleString()}원</p>
-                </div>
-              ))
             )}
           </div>
+          {editingMemo ? (
+            <div>
+              <textarea
+                value={memo}
+                onChange={(e) => setMemo(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                rows={4}
+              />
+              <button onClick={handleMemoSave} className="mt-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600">
+                저장
+              </button>
+            </div>
+          ) : (
+            <pre className="text-sm text-gray-600 whitespace-pre-wrap">{memo}</pre>
+          )}
+        </div>
 
-          <div className="bg-gray-50 rounded-xl p-6">
-            <p className="text-sm font-semibold text-gray-600 mb-2">총 톨게이트 요금</p>
-            <p className="text-3xl font-bold text-primary">{stats.monthlyTollCost.toLocaleString()}원</p>
+        {/* 탭 */}
+        <div className="bg-white rounded-lg shadow overflow-hidden">
+          <div className="flex border-b">
+            <button
+              onClick={() => setActiveTab('fuel')}
+              className={`flex-1 py-3 font-medium transition-colors ${
+                activeTab === 'fuel' ? 'bg-blue-500 text-white' : 'text-gray-600 hover:bg-gray-50'
+              }`}
+            >
+              ⛽ 주유 기록
+            </button>
+            <button
+              onClick={() => setActiveTab('toll')}
+              className={`flex-1 py-3 font-medium transition-colors ${
+                activeTab === 'toll' ? 'bg-blue-500 text-white' : 'text-gray-600 hover:bg-gray-50'
+              }`}
+            >
+              🛣️ 톨게이트
+            </button>
+          </div>
+
+          <div className="p-4">
+            {activeTab === 'fuel' ? (
+              <div className="space-y-4">
+                <form onSubmit={handleFuelSubmit} className="space-y-3">
+                  <input
+                    type="date"
+                    value={fuelForm.date}
+                    onChange={(e) => setFuelForm({ ...fuelForm, date: e.target.value })}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    required
+                  />
+                  <input
+                    type="text"
+                    placeholder="지역"
+                    value={fuelForm.region}
+                    onChange={(e) => setFuelForm({ ...fuelForm, region: e.target.value })}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  />
+                  <input
+                    type="text"
+                    placeholder="주유소"
+                    value={fuelForm.station}
+                    onChange={(e) => setFuelForm({ ...fuelForm, station: e.target.value })}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  />
+                  <input
+                    type="number"
+                    placeholder="리터당 가격"
+                    value={fuelForm.price_per_liter}
+                    onChange={(e) => setFuelForm({ ...fuelForm, price_per_liter: e.target.value })}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    required
+                  />
+                  <input
+                    type="number"
+                    step="0.01"
+                    placeholder="주유량 (L)"
+                    value={fuelForm.fuel_amount}
+                    onChange={(e) => setFuelForm({ ...fuelForm, fuel_amount: e.target.value })}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    required
+                  />
+                  <div>
+                    <input
+                      type="number"
+                      placeholder="주행거리 (km)"
+                      value={fuelForm.distance}
+                      onChange={(e) => setFuelForm({ ...fuelForm, distance: e.target.value })}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      required
+                    />
+                    <p className="text-xs text-gray-500 mt-1">주행거리 (이전 주유일자부터 당일 주유일까지의 총 주행거리, km)</p>
+                  </div>
+                  <button
+                    type="submit"
+                    className="w-full bg-blue-500 text-white py-2 rounded-lg font-medium hover:bg-blue-600 transition-colors"
+                  >
+                    추가
+                  </button>
+                </form>
+
+                <div className="space-y-2">
+                  {fuelRecords.map((record) => (
+                    <div key={record.id}>
+                      {editingRecordId === record.id ? (
+                        // 수정 모드
+                        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-2">
+                          <input
+                            type="date"
+                            value={record.date}
+                            onChange={(e) => {
+                              const updated = fuelRecords.map((r) =>
+                                r.id === record.id ? { ...r, date: e.target.value } : r
+                              )
+                              setFuelRecords(updated)
+                            }}
+                            className="w-full px-3 py-1 border border-gray-300 rounded"
+                          />
+                          <input
+                            type="time"
+                            value={record.time || ''}
+                            onChange={(e) => {
+                              const updated = fuelRecords.map((r) =>
+                                r.id === record.id ? { ...r, time: e.target.value } : r
+                              )
+                              setFuelRecords(updated)
+                            }}
+                            className="w-full px-3 py-1 border border-gray-300 rounded"
+                          />
+                          <input
+                            type="text"
+                            placeholder="지역"
+                            value={record.region || ''}
+                            onChange={(e) => {
+                              const updated = fuelRecords.map((r) =>
+                                r.id === record.id ? { ...r, region: e.target.value } : r
+                              )
+                              setFuelRecords(updated)
+                            }}
+                            className="w-full px-3 py-1 border border-gray-300 rounded"
+                          />
+                          <input
+                            type="text"
+                            placeholder="주유소"
+                            value={record.station || ''}
+                            onChange={(e) => {
+                              const updated = fuelRecords.map((r) =>
+                                r.id === record.id ? { ...r, station: e.target.value } : r
+                              )
+                              setFuelRecords(updated)
+                            }}
+                            className="w-full px-3 py-1 border border-gray-300 rounded"
+                          />
+                          <input
+                            type="number"
+                            placeholder="리터당 가격"
+                            value={record.price_per_liter}
+                            onChange={(e) => {
+                              const updated = fuelRecords.map((r) =>
+                                r.id === record.id ? { ...r, price_per_liter: Number(e.target.value) } : r
+                              )
+                              setFuelRecords(updated)
+                            }}
+                            className="w-full px-3 py-1 border border-gray-300 rounded"
+                          />
+                          <input
+                            type="number"
+                            step="0.01"
+                            placeholder="주유량 (L)"
+                            value={record.fuel_amount}
+                            onChange={(e) => {
+                              const updated = fuelRecords.map((r) =>
+                                r.id === record.id ? { ...r, fuel_amount: Number(e.target.value) } : r
+                              )
+                              setFuelRecords(updated)
+                            }}
+                            className="w-full px-3 py-1 border border-gray-300 rounded"
+                          />
+                          <input
+                            type="number"
+                            placeholder="주행거리 (km)"
+                            value={record.distance}
+                            onChange={(e) => {
+                              const updated = fuelRecords.map((r) =>
+                                r.id === record.id ? { ...r, distance: Number(e.target.value) } : r
+                              )
+                              setFuelRecords(updated)
+                            }}
+                            className="w-full px-3 py-1 border border-gray-300 rounded"
+                          />
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => handleUpdateFuel(record)}
+                              className="flex-1 bg-blue-500 text-white py-2 rounded hover:bg-blue-600"
+                            >
+                              저장
+                            </button>
+                            <button
+                              onClick={cancelEdit}
+                              className="flex-1 bg-gray-300 text-gray-700 py-2 rounded hover:bg-gray-400"
+                            >
+                              취소
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        // 일반 표시 모드
+                        <div className="bg-white border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow relative">
+                          <div className="absolute top-2 right-2">
+                            <button
+                              onClick={() => setOpenMenuId(openMenuId === record.id ? null : record.id)}
+                              className="text-gray-500 hover:text-gray-700 text-2xl leading-none px-2"
+                            >
+                              ⋮
+                            </button>
+                            {openMenuId === record.id && (
+                              <div className="absolute right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-10 w-24">
+                                <button
+                                  onClick={() => startEditFuel(record)}
+                                  className="w-full text-left px-4 py-2 hover:bg-gray-100 text-sm"
+                                >
+                                  수정
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteFuel(record.id)}
+                                  className="w-full text-left px-4 py-2 hover:bg-red-50 text-red-600 text-sm"
+                                >
+                                  삭제
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                          <div className="text-sm text-gray-600 mb-2">
+                            {record.date} {record.time && `• ${record.time}`}
+                          </div>
+                          {(record.region || record.station) && (
+                            <div className="text-sm text-gray-600 mb-2">
+                              {record.region} {record.station}
+                            </div>
+                          )}
+                          <div className="flex justify-between items-end">
+                            <div className="space-y-1">
+                              <div className="text-sm text-gray-600">
+                                {record.price_per_liter.toLocaleString()}원/L × {record.fuel_amount}L
+                              </div>
+                              <div className="text-sm text-gray-600">{record.distance.toLocaleString()}km 주행</div>
+                              <div className="text-sm text-gray-600">
+                                연비: {(record.distance / record.fuel_amount).toFixed(2)} km/L
+                              </div>
+                            </div>
+                            <div className="text-2xl font-bold text-blue-600">{record.total_cost.toLocaleString()}원</div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <form onSubmit={handleTollSubmit} className="space-y-3">
+                  <input
+                    type="date"
+                    value={tollForm.date}
+                    onChange={(e) => setTollForm({ ...tollForm, date: e.target.value })}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    required
+                  />
+                  <input
+                    type="text"
+                    placeholder="구간"
+                    value={tollForm.section}
+                    onChange={(e) => setTollForm({ ...tollForm, section: e.target.value })}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  />
+                  <input
+                    type="number"
+                    placeholder="금액"
+                    value={tollForm.amount}
+                    onChange={(e) => setTollForm({ ...tollForm, amount: e.target.value })}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    required
+                  />
+                  <button
+                    type="submit"
+                    className="w-full bg-blue-500 text-white py-2 rounded-lg font-medium hover:bg-blue-600 transition-colors"
+                  >
+                    추가
+                  </button>
+                </form>
+
+                <div className="space-y-2">
+                  {tollRecords.map((record) => (
+                    <div key={record.id}>
+                      {editingRecordId === record.id ? (
+                        // 수정 모드
+                        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-2">
+                          <input
+                            type="date"
+                            value={record.date}
+                            onChange={(e) => {
+                              const updated = tollRecords.map((r) =>
+                                r.id === record.id ? { ...r, date: e.target.value } : r
+                              )
+                              setTollRecords(updated)
+                            }}
+                            className="w-full px-3 py-1 border border-gray-300 rounded"
+                          />
+                          <input
+                            type="text"
+                            placeholder="구간"
+                            value={record.section || ''}
+                            onChange={(e) => {
+                              const updated = tollRecords.map((r) =>
+                                r.id === record.id ? { ...r, section: e.target.value } : r
+                              )
+                              setTollRecords(updated)
+                            }}
+                            className="w-full px-3 py-1 border border-gray-300 rounded"
+                          />
+                          <input
+                            type="number"
+                            placeholder="금액"
+                            value={record.amount}
+                            onChange={(e) => {
+                              const updated = tollRecords.map((r) =>
+                                r.id === record.id ? { ...r, amount: Number(e.target.value) } : r
+                              )
+                              setTollRecords(updated)
+                            }}
+                            className="w-full px-3 py-1 border border-gray-300 rounded"
+                          />
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => handleUpdateToll(record)}
+                              className="flex-1 bg-blue-500 text-white py-2 rounded hover:bg-blue-600"
+                            >
+                              저장
+                            </button>
+                            <button
+                              onClick={cancelEdit}
+                              className="flex-1 bg-gray-300 text-gray-700 py-2 rounded hover:bg-gray-400"
+                            >
+                              취소
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        // 일반 표시 모드
+                        <div className="bg-white border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow relative">
+                          <div className="absolute top-2 right-2">
+                            <button
+                              onClick={() => setOpenMenuId(openMenuId === record.id ? null : record.id)}
+                              className="text-gray-500 hover:text-gray-700 text-2xl leading-none px-2"
+                            >
+                              ⋮
+                            </button>
+                            {openMenuId === record.id && (
+                              <div className="absolute right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-10 w-24">
+                                <button
+                                  onClick={() => startEditToll(record)}
+                                  className="w-full text-left px-4 py-2 hover:bg-gray-100 text-sm"
+                                >
+                                  수정
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteToll(record.id)}
+                                  className="w-full text-left px-4 py-2 hover:bg-red-50 text-red-600 text-sm"
+                                >
+                                  삭제
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                          <div className="text-sm text-gray-600 mb-2">{record.date}</div>
+                          {record.section && <div className="text-sm text-gray-600 mb-2">{record.section}</div>}
+                          <div className="text-2xl font-bold text-green-600">{record.amount.toLocaleString()}원</div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
-
-      <style jsx>{`
-        @keyframes slide-in {
-          from {
-            transform: translateX(400px);
-            opacity: 0;
-          }
-          to {
-            transform: translateX(0);
-            opacity: 1;
-          }
-        }
-        .animate-slide-in {
-          animation: slide-in 0.3s ease;
-        }
-      `}</style>
     </div>
   )
 }
