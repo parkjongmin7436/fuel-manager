@@ -15,6 +15,8 @@ export default function Home() {
   const [isBudgetEditing, setIsBudgetEditing] = useState(false)
   const [tempMemo, setTempMemo] = useState('')
   const [tempBudget, setTempBudget] = useState(200000)
+  const [editingFuelId, setEditingFuelId] = useState<string | null>(null)
+  const [editingTollId, setEditingTollId] = useState<string | null>(null)
 
   const [formData, setFormData] = useState({
     date: new Date().toISOString().split('T')[0],
@@ -118,6 +120,22 @@ export default function Home() {
     }
   }
 
+  const handleDeleteFuel = async (id: string) => {
+    if (!confirm('정말 삭제하시겠습니까?')) return
+    
+    const { error } = await supabase
+      .from('fuel_records')
+      .delete()
+      .eq('id', id)
+
+    if (!error) {
+      setFuelRecords(fuelRecords.filter(r => r.id !== id))
+      showToast('삭제되었습니다!')
+    } else {
+      showToast('삭제에 실패했습니다', 'error')
+    }
+  }
+
   const handleAddToll = async (e: React.FormEvent) => {
     e.preventDefault()
     
@@ -140,6 +158,22 @@ export default function Home() {
       })
     } else {
       showToast('저장에 실패했습니다', 'error')
+    }
+  }
+
+  const handleDeleteToll = async (id: string) => {
+    if (!confirm('정말 삭제하시겠습니까?')) return
+    
+    const { error } = await supabase
+      .from('toll_records')
+      .delete()
+      .eq('id', id)
+
+    if (!error) {
+      setTollRecords(tollRecords.filter(r => r.id !== id))
+      showToast('삭제되었습니다!')
+    } else {
+      showToast('삭제에 실패했습니다', 'error')
     }
   }
 
@@ -391,7 +425,7 @@ export default function Home() {
                 <input type="number" step="0.1" value={formData.fuelAmount} onChange={(e) => setFormData({ ...formData, fuelAmount: e.target.value })} placeholder="예: 40.5" className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent" required min="0" />
               </div>
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">주행거리 <span className="text-gray-400 font-normal">(이전 주유 후 주행한 거리, km)</span></label>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">주행거리 <span className="text-gray-400 font-normal">(이전 주유 후, km)</span></label>
                 <input type="number" value={formData.distance} onChange={(e) => setFormData({ ...formData, distance: e.target.value })} placeholder="예: 350" className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent" required min="0" />
               </div>
               <button type="submit" className="w-full bg-primary hover:bg-primary-dark text-white font-bold py-4 px-6 rounded-xl transition transform hover:scale-[1.02] active:scale-100">
@@ -407,7 +441,13 @@ export default function Home() {
                 <p className="text-center text-gray-400 py-12">이번 달 기록이 없습니다</p>
               ) : (
                 fuelRecords.map((record) => (
-                  <div key={record.id} className="bg-gray-50 rounded-xl p-5 hover:bg-gray-100 transition">
+                  <div key={record.id} className="bg-gray-50 rounded-xl p-5 hover:bg-gray-100 transition relative group">
+                    <button 
+                      onClick={() => handleDeleteFuel(record.id)}
+                      className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded-lg text-sm font-semibold"
+                    >
+                      삭제
+                    </button>
                     <div className="flex justify-between items-start mb-2">
                       <div>
                         <p className="font-bold text-gray-900">{record.date} {record.region && `(${record.region})`}</p>
@@ -451,7 +491,13 @@ export default function Home() {
               <p className="text-center text-gray-400 py-8">이번 달 톨게이트 기록이 없습니다</p>
             ) : (
               tollRecords.map((record) => (
-                <div key={record.id} className="bg-gray-50 rounded-xl p-4 hover:bg-gray-100 transition">
+                <div key={record.id} className="bg-gray-50 rounded-xl p-4 hover:bg-gray-100 transition relative group">
+                  <button 
+                    onClick={() => handleDeleteToll(record.id)}
+                    className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded-lg text-sm font-semibold"
+                  >
+                    삭제
+                  </button>
                   <p className="font-bold text-gray-900 mb-1">{record.date}</p>
                   <p className="text-sm text-gray-600 mb-2">{record.section}</p>
                   <p className="text-xl font-bold text-primary">{record.amount.toLocaleString()}원</p>
