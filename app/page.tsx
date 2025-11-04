@@ -6,7 +6,6 @@ import { supabase, FuelRecord, TollRecord } from '@/lib/supabase'
 import type { User } from '@supabase/supabase-js'
 
 export default function Home() {
-  // ✅ Auth 상태
   const [user, setUser] = useState<User | null>(null)
   const [authLoading, setAuthLoading] = useState(true)
   const router = useRouter()
@@ -33,6 +32,7 @@ export default function Home() {
     station: '',
     pricePerLiter: '',
     fuelAmount: '',
+    totalCost: '', // ✅ 추가
     distance: ''
   })
 
@@ -42,7 +42,6 @@ export default function Home() {
     amount: ''
   })
 
-  // ✅ Auth 체크
   useEffect(() => {
     checkUser()
     
@@ -72,7 +71,6 @@ export default function Home() {
     }
   }, [currentYear, currentMonth, user])
 
-  // ✅ user_id 필터 추가
   const loadData = async () => {
     if (!user) return
     
@@ -125,13 +123,68 @@ export default function Home() {
     setLoading(false)
   }
 
-  // ✅ user_id 추가
+  // ✅ 주유량/총가격 자동 계산
+  const handleFuelAmountChange = (value: string) => {
+    setFormData(prev => {
+      const newData = { ...prev, fuelAmount: value }
+      if (value && prev.pricePerLiter) {
+        newData.totalCost = Math.round(parseFloat(value) * parseFloat(prev.pricePerLiter)).toString()
+      }
+      return newData
+    })
+  }
+
+  const handleTotalCostChange = (value: string) => {
+    setFormData(prev => {
+      const newData = { ...prev, totalCost: value }
+      if (value && prev.pricePerLiter) {
+        const calculated = parseFloat(value) / parseFloat(prev.pricePerLiter)
+        newData.fuelAmount = calculated.toFixed(2)
+      }
+      return newData
+    })
+  }
+
+  const handlePricePerLiterChange = (value: string) => {
+    setFormData(prev => {
+      const newData = { ...prev, pricePerLiter: value }
+      if (value && prev.fuelAmount) {
+        newData.totalCost = Math.round(parseFloat(prev.fuelAmount) * parseFloat(value)).toString()
+      } else if (value && prev.totalCost) {
+        const calculated = parseFloat(prev.totalCost) / parseFloat(value)
+        newData.fuelAmount = calculated.toFixed(2)
+      }
+      return newData
+    })
+  }
+
   const handleAddFuel = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!user) return
     
+    // ✅ 단가 필수
+    if (!formData.pricePerLiter) {
+      showToast('단가를 입력해주세요', 'error')
+      return
+    }
+
+    // ✅ 주유량 또는 총가격 중 하나는 필수
+    if (!formData.fuelAmount && !formData.totalCost) {
+      showToast('주유량 또는 총 주유가격 중 하나를 입력해주세요', 'error')
+      return
+    }
+
     const currentTime = new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false })
-    const totalCost = Math.round(parseFloat(formData.pricePerLiter) * parseFloat(formData.fuelAmount))
+    
+    // ✅ 최종 계산
+    let finalFuelAmount = parseFloat(formData.fuelAmount)
+    let finalTotalCost = parseInt(formData.totalCost)
+
+    if (formData.fuelAmount && !formData.totalCost) {
+      finalTotalCost = Math.round(parseFloat(formData.pricePerLiter) * finalFuelAmount)
+    } else if (formData.totalCost && !formData.fuelAmount) {
+      finalFuelAmount = parseFloat((finalTotalCost / parseFloat(formData.pricePerLiter)).toFixed(2))
+    }
     
     const { data, error } = await supabase
       .from('fuel_records')
@@ -142,9 +195,9 @@ export default function Home() {
         region: formData.region,
         station: formData.station,
         price_per_liter: parseInt(formData.pricePerLiter),
-        fuel_amount: parseFloat(formData.fuelAmount),
-        distance: parseInt(formData.distance),
-        total_cost: totalCost
+        fuel_amount: finalFuelAmount,
+        distance: formData.distance ? parseInt(formData.distance) : 0, // ✅ 선택사항
+        total_cost: finalTotalCost
       }])
       .select()
 
@@ -152,11 +205,12 @@ export default function Home() {
       setFuelRecords([data[0], ...fuelRecords])
       showToast('주유 기록이 추가되었습니다!')
       setFormData({
-        ...formData,
+        date: formData.date,
         region: '',
         station: '',
         pricePerLiter: '',
         fuelAmount: '',
+        totalCost: '',
         distance: ''
       })
     } else {
@@ -169,7 +223,6 @@ export default function Home() {
     setOpenMenuId(null)
   }
 
-  // ✅ user_id 확인 추가
   const handleUpdateFuel = async (record: FuelRecord) => {
     if (!user) return
     
@@ -204,7 +257,6 @@ export default function Home() {
     loadData()
   }
 
-  // ✅ user_id 확인 추가
   const handleDeleteFuel = async (id: string) => {
     if (!user) return
     if (!confirm('정말 삭제하시겠습니까?')) return
@@ -224,7 +276,6 @@ export default function Home() {
     setOpenMenuId(null)
   }
 
-  // ✅ user_id 추가
   const handleAddToll = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!user) return
@@ -257,7 +308,6 @@ export default function Home() {
     setOpenMenuId(null)
   }
 
-  // ✅ user_id 확인 추가
   const handleUpdateToll = async (record: TollRecord) => {
     if (!user) return
     
@@ -285,7 +335,6 @@ export default function Home() {
     loadData()
   }
 
-  // ✅ user_id 확인 추가
   const handleDeleteToll = async (id: string) => {
     if (!user) return
     if (!confirm('정말 삭제하시겠습니까?')) return
@@ -305,7 +354,6 @@ export default function Home() {
     setOpenMenuId(null)
   }
 
-  // ✅ user_id 추가
   const handleSaveBudget = async () => {
     if (!user) return
     
@@ -329,7 +377,6 @@ export default function Home() {
     }
   }
 
-  // ✅ user_id 추가
   const handleSaveMemo = async () => {
     if (!user) return
     
@@ -351,7 +398,6 @@ export default function Home() {
     }
   }
 
-  // ✅ 로그아웃 기능 추가
   const handleLogout = async () => {
     if (!confirm('로그아웃 하시겠습니까?')) return
     
@@ -382,6 +428,7 @@ export default function Home() {
       return (a.time || '').localeCompare(b.time || '')
     })
 
+    // ✅ 주행거리가 있는 것만 연비 계산
     let totalEfficiency = 0
     let count = 0
     for (let i = 1; i < sortedRecords.length; i++) {
@@ -431,7 +478,6 @@ export default function Home() {
 
   const monthNames = ['1월', '2월', '3월', '4월', '5월', '6월', '7월', '8월', '9월', '10월', '11월', '12월']
 
-  // ✅ Auth 로딩 화면
   if (authLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -453,6 +499,7 @@ export default function Home() {
       </div>
     )
   }
+
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="bg-gradient-to-r from-primary to-primary-dark text-white px-6 py-12 mb-[-40px]">
@@ -556,7 +603,7 @@ export default function Home() {
                 </>
               ) : (
                 <div className="flex gap-2">
-                  <input type="number" value={tempBudget} onChange={(e) => setTempBudget(parseInt(e.target.value))} className="flex-1 px-3 py-2 rounded-lg text-gray-900 font-bold" min="0" />
+                  <input type="number" value={tempBudget} onChange={(e) => setTempBudget(parseInt(e.target.value) || 0)} className="flex-1 px-3 py-2 rounded-lg text-gray-900 font-bold" min="0" />
                   <button onClick={handleSaveBudget} className="px-3 py-2 bg-white/20 hover:bg-white/30 rounded-lg font-semibold transition">저장</button>
                   <button onClick={() => setIsBudgetEditing(false)} className="px-3 py-2 bg-white/20 hover:bg-white/30 rounded-lg font-semibold transition">취소</button>
                 </div>
@@ -578,15 +625,25 @@ export default function Home() {
               </div>
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">단가 <span className="text-gray-400 font-normal">(원/L)</span></label>
-                <input type="number" value={formData.pricePerLiter} onChange={(e) => setFormData({ ...formData, pricePerLiter: e.target.value })} placeholder="예: 1600" className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent" required min="0" />
+                <input type="number" value={formData.pricePerLiter} onChange={(e) => handlePricePerLiterChange(e.target.value)} placeholder="예: 1600" className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent" required min="0" />
               </div>
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">주유량 <span className="text-gray-400 font-normal">(L)</span></label>
-                <input type="number" step="0.1" value={formData.fuelAmount} onChange={(e) => setFormData({ ...formData, fuelAmount: e.target.value })} placeholder="예: 40.5" className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent" required min="0" />
+              {/* ✅ 주유량 OR 총가격 */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">주유량 <span className="text-gray-400 font-normal">(L)</span></label>
+                  <input type="number" step="0.01" value={formData.fuelAmount} onChange={(e) => handleFuelAmountChange(e.target.value)} placeholder="40.5" className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent" min="0" />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">총 주유가격 <span className="text-gray-400 font-normal">(원)</span></label>
+                  <input type="number" value={formData.totalCost} onChange={(e) => handleTotalCostChange(e.target.value)} placeholder="65000" className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent" min="0" />
+                </div>
               </div>
+              <p className="text-xs text-gray-500 -mt-2">※ 주유량 또는 총가격 중 하나만 입력하세요 (자동 계산됨)</p>
+              {/* ✅ 주행거리 선택사항 */}
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">주행거리 <span className="text-gray-400 font-normal">(이전 주유일자부터 당일 주유일까지의 총 주행거리, km)</span></label>
-                <input type="number" value={formData.distance} onChange={(e) => setFormData({ ...formData, distance: e.target.value })} placeholder="예: 350" className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent" required min="0" />
+                <label className="block text-sm font-semibold text-gray-700 mb-2">주행거리 <span className="text-gray-400 font-normal">(선택, km)</span></label>
+                <input type="number" value={formData.distance} onChange={(e) => setFormData({ ...formData, distance: e.target.value })} placeholder="350" className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent" min="0" />
+                <p className="text-xs text-gray-500 mt-1">※ 입력 시 연비 계산됨 / 미입력 시 연비 계산 안 됨</p>
               </div>
               <button type="submit" className="w-full bg-primary hover:bg-primary-dark text-white font-bold py-4 px-6 rounded-xl transition transform hover:scale-[1.02] active:scale-100">
                 기록 추가
@@ -633,7 +690,7 @@ export default function Home() {
                           </div>
                           <div>
                             <label className="block text-xs font-semibold text-gray-700 mb-1">거리</label>
-                            <input type="number" value={record.distance} onChange={(e) => { const updated = fuelRecords.map(r => r.id === record.id ? { ...r, distance: parseInt(e.target.value) } : r); setFuelRecords(updated) }} className="w-full px-3 py-2 border rounded-lg text-sm" min="0" />
+                            <input type="number" value={record.distance} onChange={(e) => { const updated = fuelRecords.map(r => r.id === record.id ? { ...r, distance: parseInt(e.target.value) || 0 } : r); setFuelRecords(updated) }} className="w-full px-3 py-2 border rounded-lg text-sm" min="0" />
                           </div>
                         </div>
                         <div className="flex gap-2 pt-2">
@@ -658,7 +715,12 @@ export default function Home() {
                             <p className="text-xs text-gray-400 mt-0.5">{record.time}</p>
                           </div>
                         </div>
-                        <p className="text-sm text-gray-600 mb-3">{record.station || '주유소'}<br />주유량: {record.fuel_amount}L | 단가: {record.price_per_liter.toLocaleString()}원/L | 주행: {record.distance}km</p>
+                        <p className="text-sm text-gray-600 mb-3">
+                          {record.station || '주유소'}<br />
+                          주유량: {record.fuel_amount}L | 단가: {record.price_per_liter.toLocaleString()}원/L
+                          {record.distance > 0 && ` | 주행: ${record.distance}km`}
+                          {record.distance > 0 && record.fuel_amount > 0 && ` | 연비: ${(record.distance / record.fuel_amount).toFixed(2)} km/L`}
+                        </p>
                         <p className="text-2xl font-bold text-primary">{record.total_cost.toLocaleString()}원</p>
                       </div>
                     )}
@@ -668,6 +730,7 @@ export default function Home() {
             </div>
           </div>
         </div>
+
         <div className="bg-white rounded-2xl shadow-md p-6 mb-8">
           <h2 className="text-xl font-bold text-gray-900 mb-6">톨게이트 요금</h2>
           <form onSubmit={handleAddToll} className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
