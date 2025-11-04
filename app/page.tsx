@@ -455,7 +455,7 @@ export default function Home() {
   }
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="bg-gradient-to-r from-primary to-primary-dark text-white px-6 py-12">
+      <div className="bg-gradient-to-r from-primary to-primary-dark text-white px-6 py-12 mb-[-80px]">
         <div className="max-w-7xl mx-auto flex justify-between items-center">
           <h1 className="text-4xl font-bold">⛽️ 주유 관리</h1>
           <button 
