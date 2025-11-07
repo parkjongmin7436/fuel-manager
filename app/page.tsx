@@ -222,8 +222,7 @@ export default function Home() {
   const handleUpdateFuel = async (record: FuelRecord) => {
     if (!user) return
     
-    const totalCost = Math.round(record.price_per_liter * record.fuel_amount)
-
+    // ✅ 수정: 재계산 제거 - 편집 모드에서 이미 계산된 값 그대로 저장
     const { error } = await supabase
       .from('fuel_records')
       .update({
@@ -234,7 +233,7 @@ export default function Home() {
         price_per_liter: record.price_per_liter,
         fuel_amount: record.fuel_amount,
         distance: record.distance,
-        total_cost: totalCost
+        total_cost: record.total_cost
       })
       .eq('id', record.id)
       .eq('user_id', user.id)
@@ -675,7 +674,6 @@ export default function Home() {
                         <div className="grid grid-cols-2 gap-2">
                           <div>
                             <label className="block text-xs font-semibold text-gray-700 mb-1">단가</label>
-                            {/* ✅ 수정: 단가 변경 시 총 주유비 고정 → 주유량 재계산 */}
                             <input type="number" value={record.price_per_liter} onChange={(e) => { 
                               const newPrice = parseInt(e.target.value) || 0
                               const newAmount = record.total_cost > 0 && newPrice > 0 
@@ -687,7 +685,6 @@ export default function Home() {
                           </div>
                           <div>
                             <label className="block text-xs font-semibold text-gray-700 mb-1">주유량</label>
-                            {/* ✅ 유지: 주유량 변경 시 단가 고정 → 총 주유비 재계산 */}
                             <input type="number" step="0.01" value={record.fuel_amount} onChange={(e) => { 
                               const newAmount = parseFloat(e.target.value) || 0
                               const newTotal = Math.round(record.price_per_liter * newAmount)
@@ -699,7 +696,6 @@ export default function Home() {
                         <div className="grid grid-cols-2 gap-2">
                           <div>
                             <label className="block text-xs font-semibold text-gray-700 mb-1">총 주유비</label>
-                            {/* ✅ 유지: 총 주유비 변경 시 단가 고정 → 주유량 재계산 */}
                             <input type="number" value={record.total_cost} onChange={(e) => { 
                               const newTotal = parseInt(e.target.value) || 0
                               const newAmount = record.price_per_liter > 0 ? parseFloat((newTotal / record.price_per_liter).toFixed(2)) : 0
