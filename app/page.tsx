@@ -679,17 +679,38 @@ export default function Home() {
                             <input type="text" value={record.station || ''} onChange={(e) => { const updated = fuelRecords.map(r => r.id === record.id ? { ...r, station: e.target.value } : r); setFuelRecords(updated) }} className="w-full px-3 py-2 border rounded-lg text-sm" maxLength={50} />
                           </div>
                         </div>
-                        <div className="grid grid-cols-3 gap-2">
+                        <div className="grid grid-cols-2 gap-2">
                           <div>
                             <label className="block text-xs font-semibold text-gray-700 mb-1">단가</label>
-                            <input type="number" value={record.price_per_liter} onChange={(e) => { const updated = fuelRecords.map(r => r.id === record.id ? { ...r, price_per_liter: parseInt(e.target.value) } : r); setFuelRecords(updated) }} className="w-full px-3 py-2 border rounded-lg text-sm" min="0" />
+                            <input type="number" value={record.price_per_liter} onChange={(e) => { 
+                              const newPrice = parseInt(e.target.value) || 0
+                              const newTotal = Math.round(newPrice * record.fuel_amount)
+                              const updated = fuelRecords.map(r => r.id === record.id ? { ...r, price_per_liter: newPrice, total_cost: newTotal } : r)
+                              setFuelRecords(updated) 
+                            }} className="w-full px-3 py-2 border rounded-lg text-sm" min="0" />
                           </div>
                           <div>
                             <label className="block text-xs font-semibold text-gray-700 mb-1">주유량</label>
-                            <input type="number" step="0.1" value={record.fuel_amount} onChange={(e) => { const updated = fuelRecords.map(r => r.id === record.id ? { ...r, fuel_amount: parseFloat(e.target.value) } : r); setFuelRecords(updated) }} className="w-full px-3 py-2 border rounded-lg text-sm" min="0" />
+                            <input type="number" step="0.01" value={record.fuel_amount} onChange={(e) => { 
+                              const newAmount = parseFloat(e.target.value) || 0
+                              const newTotal = Math.round(record.price_per_liter * newAmount)
+                              const updated = fuelRecords.map(r => r.id === record.id ? { ...r, fuel_amount: newAmount, total_cost: newTotal } : r)
+                              setFuelRecords(updated) 
+                            }} className="w-full px-3 py-2 border rounded-lg text-sm" min="0" />
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="block text-xs font-semibold text-gray-700 mb-1">총 주유비</label>
+                            <input type="number" value={record.total_cost} onChange={(e) => { 
+                              const newTotal = parseInt(e.target.value) || 0
+                              const newAmount = record.price_per_liter > 0 ? parseFloat((newTotal / record.price_per_liter).toFixed(2)) : 0
+                              const updated = fuelRecords.map(r => r.id === record.id ? { ...r, total_cost: newTotal, fuel_amount: newAmount } : r)
+                              setFuelRecords(updated) 
+                            }} className="w-full px-3 py-2 border rounded-lg text-sm" min="0" />
                           </div>
                           <div>
-                            <label className="block text-xs font-semibold text-gray-700 mb-1">거리</label>
+                            <label className="block text-xs font-semibold text-gray-700 mb-1">거리 (선택)</label>
                             <input type="number" value={record.distance} onChange={(e) => { const updated = fuelRecords.map(r => r.id === record.id ? { ...r, distance: parseInt(e.target.value) || 0 } : r); setFuelRecords(updated) }} className="w-full px-3 py-2 border rounded-lg text-sm" min="0" />
                           </div>
                         </div>
