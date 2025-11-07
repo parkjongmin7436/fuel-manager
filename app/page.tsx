@@ -32,7 +32,7 @@ export default function Home() {
     station: '',
     pricePerLiter: '',
     fuelAmount: '',
-    totalCost: '', // ✅ 추가
+    totalCost: '',
     distance: ''
   })
 
@@ -123,7 +123,6 @@ export default function Home() {
     setLoading(false)
   }
 
-  // ✅ 주유량/총가격 자동 계산
   const handleFuelAmountChange = (value: string) => {
     setFormData(prev => {
       const newData = { ...prev, fuelAmount: value }
@@ -162,13 +161,11 @@ export default function Home() {
     e.preventDefault()
     if (!user) return
     
-    // ✅ 단가 필수
     if (!formData.pricePerLiter) {
       showToast('단가를 입력해주세요', 'error')
       return
     }
 
-    // ✅ 주유량 또는 총가격 중 하나는 필수
     if (!formData.fuelAmount && !formData.totalCost) {
       showToast('주유량 또는 총 주유가격 중 하나를 입력해주세요', 'error')
       return
@@ -176,7 +173,6 @@ export default function Home() {
 
     const currentTime = new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false })
     
-    // ✅ 최종 계산
     let finalFuelAmount = parseFloat(formData.fuelAmount)
     let finalTotalCost = parseInt(formData.totalCost)
 
@@ -196,7 +192,7 @@ export default function Home() {
         station: formData.station,
         price_per_liter: parseInt(formData.pricePerLiter),
         fuel_amount: finalFuelAmount,
-        distance: formData.distance ? parseInt(formData.distance) : 0, // ✅ 선택사항
+        distance: formData.distance ? parseInt(formData.distance) : 0,
         total_cost: finalTotalCost
       }])
       .select()
@@ -428,7 +424,6 @@ export default function Home() {
       return (a.time || '').localeCompare(b.time || '')
     })
 
-    // ✅ 주행거리가 있는 것만 연비 계산
     let totalEfficiency = 0
     let count = 0
     for (let i = 1; i < sortedRecords.length; i++) {
@@ -627,7 +622,6 @@ export default function Home() {
                 <label className="block text-sm font-semibold text-gray-700 mb-2">단가 <span className="text-gray-400 font-normal">(원/L)</span></label>
                 <input type="number" value={formData.pricePerLiter} onChange={(e) => handlePricePerLiterChange(e.target.value)} placeholder="예: 1600" className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent" required min="0" />
               </div>
-              {/* ✅ 주유량 OR 총가격 */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-2">주유량 <span className="text-gray-400 font-normal">(L)</span></label>
@@ -639,7 +633,6 @@ export default function Home() {
                 </div>
               </div>
               <p className="text-xs text-gray-500 -mt-2">※ 주유량 또는 총가격 중 하나만 입력하세요 (자동 계산됨)</p>
-              {/* ✅ 주행거리 선택사항 */}
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">주행거리 <span className="text-gray-400 font-normal">(선택, km)</span></label>
                 <input type="number" value={formData.distance} onChange={(e) => setFormData({ ...formData, distance: e.target.value })} placeholder="350" className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent" min="0" />
@@ -682,15 +675,19 @@ export default function Home() {
                         <div className="grid grid-cols-2 gap-2">
                           <div>
                             <label className="block text-xs font-semibold text-gray-700 mb-1">단가</label>
+                            {/* ✅ 수정: 단가 변경 시 총 주유비 고정 → 주유량 재계산 */}
                             <input type="number" value={record.price_per_liter} onChange={(e) => { 
                               const newPrice = parseInt(e.target.value) || 0
-                              const newTotal = Math.round(newPrice * record.fuel_amount)
-                              const updated = fuelRecords.map(r => r.id === record.id ? { ...r, price_per_liter: newPrice, total_cost: newTotal } : r)
+                              const newAmount = record.total_cost > 0 && newPrice > 0 
+                                ? parseFloat((record.total_cost / newPrice).toFixed(2)) 
+                                : record.fuel_amount
+                              const updated = fuelRecords.map(r => r.id === record.id ? { ...r, price_per_liter: newPrice, fuel_amount: newAmount } : r)
                               setFuelRecords(updated) 
                             }} className="w-full px-3 py-2 border rounded-lg text-sm" min="0" />
                           </div>
                           <div>
                             <label className="block text-xs font-semibold text-gray-700 mb-1">주유량</label>
+                            {/* ✅ 유지: 주유량 변경 시 단가 고정 → 총 주유비 재계산 */}
                             <input type="number" step="0.01" value={record.fuel_amount} onChange={(e) => { 
                               const newAmount = parseFloat(e.target.value) || 0
                               const newTotal = Math.round(record.price_per_liter * newAmount)
@@ -702,6 +699,7 @@ export default function Home() {
                         <div className="grid grid-cols-2 gap-2">
                           <div>
                             <label className="block text-xs font-semibold text-gray-700 mb-1">총 주유비</label>
+                            {/* ✅ 유지: 총 주유비 변경 시 단가 고정 → 주유량 재계산 */}
                             <input type="number" value={record.total_cost} onChange={(e) => { 
                               const newTotal = parseInt(e.target.value) || 0
                               const newAmount = record.price_per_liter > 0 ? parseFloat((newTotal / record.price_per_liter).toFixed(2)) : 0
